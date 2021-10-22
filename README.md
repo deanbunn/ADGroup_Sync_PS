@@ -1,6 +1,6 @@
 ## AD Group Sync 
 
-A PowerShell solution for syncing AD group membership with either text files with user IDs or payroll information put on AD accounts extended property. 
+A PowerShell solution for syncing AD group membership with either text files with user IDs or payroll information listed on AD accounts extended properties. 
 
 ### Required Setup
 
