@@ -1,1 +1,6 @@
+# Protect Production Config File
 config.json
+# Protect Production Group Data Source Files
+*.txt
+# Display Example Data Source File
+!Group1_UserIDs_Example.txt
