@@ -1,9 +1,10 @@
 ## AD Group Sync 
 
-A PowerShell solution for syncing AD group membership with either text files with user IDs or payroll information listed on AD accounts extended properties. 
+A PowerShell solution for syncing AD group membership with text files, containing user IDs or email addresses, and\or payroll information listed on AD accounts extended properties. 
 
-Currently, still working on this project. Just setting up remote repos to track work. 
+Upon first run, the script will create the config.json file used to store the settings. Edit the file to fit your environment. 
 
+Currently, the AD group being sync'd are located in a child domain and the user accounts are located in the parent domain.
 
 ### Required Setup
 

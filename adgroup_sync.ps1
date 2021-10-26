@@ -1,7 +1,7 @@
 <#
     Title: adgroup_sync.ps1
     Authors: Dean Bunn and Shriver
-    Last Edit: 2021-10-25
+    Last Edit: 2021-10-26
 #>
 
 #Var for Config Settings
@@ -38,8 +38,7 @@ else
     exit;
 }
 
-#Write-Output $cnfgSettings.AD_Parent_Domain;
-
+# Go Through Each of the Sync Groups Listed in the Config file
 foreach($cfgADGrp in $cnfgSettings.AD_Groups)
 {
     #Hash Table for Data Source DNs 
@@ -185,3 +184,12 @@ foreach($cfgADGrp in $cnfgSettings.AD_Groups)
     }#End of Members to Add
 
 }#End of AD_Groups Foreach
+
+
+
+
+
+
+
+
+
