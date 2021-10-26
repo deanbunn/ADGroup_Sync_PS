@@ -19,14 +19,15 @@ else
 {
     #Create Blank Config Object and Export to Json File
     $blnkConfig = new-object PSObject -Property (@{ AD_Parent_Domain="parent.mycollege.edu"; 
-                                                    AD_Child_Domain="child.parent.mycollege.edu"; 
+                                                    AD_Child_Domain="child.parent.mycollege.edu";
+                                                    AD_User_Search_Base="OU=CampusUsers,DC=parent,DC=mycollege,DC=edu"; 
                                                     AD_Groups=@(@{AD_Group="Group1";
                                                                   Object_GUID="8394daff-0da7-4b62-9c5f-d603328c7858";
-                                                                  Data_Source_Text_File=".\Group1_UserIDs.txt";
+                                                                  Data_Source_Text_File=".\Group1_UserIDs_Or_Email_Addresses.txt";
                                                                   Payroll_Groups=@("024000","024001");},
                                                                 @{AD_Group="Group2";
                                                                   Object_GUID="1bde534c-80ef-4a79-9117-54206e6eaede";
-                                                                  Data_Source_Text_File=".\Group2_UserIDs.txt";
+                                                                  Data_Source_Text_File=".\Group2_UserIDs_Or_Email_Addresses.txt";
                                                                   Payroll_Groups=@("024003","024004");}
                                                                 );
                                                   });
@@ -82,7 +83,7 @@ foreach($cfgADGrp in $cnfgSettings.AD_Groups)
                     }
 
                     #Check Parent Domain for User Account
-                    $fcADUser = Get-ADUser -Filter $fltrAD -Server $cnfgSettings.AD_Parent_Domain -ResultSetSize 1;
+                    $fcADUser = Get-ADUser -Filter $fltrAD -SearchBase $cnfgSettings.AD_User_Search_Base -Server $cnfgSettings.AD_Parent_Domain -ResultSetSize 1;
 
                     #Check User to Add HashTable for Existing DN
                     if([string]::IsNullOrEmpty($fcADUser.DistinguishedName) -eq $false -and $htDSDNs.ContainsKey($fcADUser.DistinguishedName) -eq $false)
@@ -100,14 +101,87 @@ foreach($cfgADGrp in $cnfgSettings.AD_Groups)
 
     }#End of Data Source Text File Name Null\Empty Check
     
-    
+    #Check for Payroll Groups to Query
+    if($cfgADGrp.Payroll_Groups.Length -gt 0)
+    {
 
+        foreach($payrollGrp in $cfgADGrp.Payroll_Groups)
+        {
+            #Format AD Filter for Payroll Group Information
+            [string]$fltPRGrp = "extensionAttribute9 -Like '*appt" + $payrollGrp + "*' -and extensionAttribute11 -ne 'D'";
+            
+            #Pull Users with Extension Attribute Set for Payroll Group
+            $arrADUsersPR = Get-ADUser -Filter $fltPRGrp -Properties extensionAttribute9,extensionAttribute8,extensionAttribute7 -SearchBase $cnfgSettings.AD_User_Search_Base -Server $cnfgSettings.AD_Parent_Domain;
 
-    #Write-Output $cfgADGrp.AD_Group;
-    #Write-Output $cfgADGrp.Object_GUID;
-    #Write-Output $cfgADGrp.Data_Source_Text_File;
+            foreach($ADuserPR in $arrADUsersPR)
+            {
+                #Check DN Before Loading (Prevent Accounts In Not Controlled OUs)
+                if([string]::IsNullOrEmpty($ADuserPR.DistinguishedName) -eq $false -and $htDSDNs.ContainsKey($ADuserPR.DistinguishedName) -eq $false)
+                {
+                    #Add to Data Source DNs HashTable
+                    $htDSDNs.Add($ADuserPR.DistinguishedName,"1");
+                }#End of DN Checks
 
-    Write-Output " ";
-    Write-Output " ";
+            }#End of $arrADUsersPR Foreach
+            
+        }#End of Payroll_Groups Foreach
+
+    }#End of Payroll Groups Empty Check
+
+    #Pull AD Group Membership
+    $crntGrpMembers = Get-ADGroupMember -Identity $cfgADGrp.Object_GUID -Server $cnfgSettings.AD_Child_Domain;
+
+    #Load Current Members Into Removals HashTable
+    foreach($crntGrpMember in $crntGrpMembers)
+    {
+        #Check DN for AD Users OU Path (No Child Domain Accounts or Groups)
+        if([string]::IsNullOrEmpty($crntGrpMember.distinguishedName) -eq $false -and $crntGrpMember.distinguishedName.ToString().ToLower().Contains($cnfgSettings.AD_User_Search_Base.ToString().ToLower()) -eq $true)
+        {
+            $htMTRFG.Add($crntGrpMember.distinguishedName,"1");
+        }
+        
+    }
+
+    #Check Data Source Accounts
+    if($htDSDNs.Count -gt 0)
+    {
+        #Check Data Source Members
+        foreach($dsDN in $htDSDNs.Keys)
+        {
+            #Don't Remove Existing Members In Data Source Listing
+            if($htMTRFG.ContainsKey($dsDN) -eq $true)
+            {
+                $htMTRFG.Remove($dsDN);
+            }
+            else 
+            {
+                #Add Them to List to Be Added to Group
+                $htMTATG.Add($dsDN.ToString(),"1");
+            }
+
+        }#End of Data Source Members Add or Remove Checks
+
+    }#End of Data Source Accounts Checks
+
+    #Check for Members to Remove
+    if($htMTRFG.Count -gt 0)
+    {
+        foreach($mtrfg in $htMTRFG.Keys)
+        {
+            #Remove Existing Member
+            Remove-ADGroupMember -Identity $cfgADGrp.Object_GUID -members (Get-ADUser -Identity $mtrfg.ToString() –Server $cnfgSettings.AD_Parent_Domain) -Server $cnfgSettings.AD_Child_Domain -Confirm:$false;
+        }
+    }#End of Members to Remove
+
+    #Check for Members to Add
+    if($htMTATG.Count -gt 0)
+    {
+        foreach($mtatg in $htMTATG.Keys)
+        {
+            #Add New Member
+            Add-ADGroupMember -Identity $cfgADGrp.Object_GUID -members (Get-ADUser -Identity $mtatg.ToString() –Server $cnfgSettings.AD_Parent_Domain) -Server $cnfgSettings.AD_Child_Domain -Confirm:$false;
+        }
+
+    }#End of Members to Add
 
 }#End of AD_Groups Foreach
