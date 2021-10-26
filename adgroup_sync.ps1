@@ -10,10 +10,8 @@ $cnfgSettings = $null;
 #Check for Settings File 
 if((Test-Path -Path ./config.json) -eq $true)
 {
-  
     #Import Json Configuration File
     $cnfgSettings =  Get-Content -Raw -Path .\config.json | ConvertFrom-Json;
-
 }
 else
 {
