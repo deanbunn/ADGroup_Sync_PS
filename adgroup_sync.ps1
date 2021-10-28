@@ -1,7 +1,7 @@
 <#
     Title: adgroup_sync.ps1
     Authors: Dean Bunn and Shriver
-    Last Edit: 2021-10-26
+    Last Edit: 2021-10-28
 #>
 
 #Var for Config Settings
@@ -22,13 +22,17 @@ else
                                                     AD_Groups=@(@{AD_Group="Group1";
                                                                   Object_GUID="8394daff-0da7-4b62-9c5f-d603328c7858";
                                                                   Data_Source_Text_File=".\Group1_UserIDs_Or_Email_Addresses.txt";
+                                                                  Payroll_Filter="faculty,staff";
                                                                   Payroll_Groups=@("024000","024001");},
                                                                 @{AD_Group="Group2";
                                                                   Object_GUID="1bde534c-80ef-4a79-9117-54206e6eaede";
                                                                   Data_Source_Text_File=".\Group2_UserIDs_Or_Email_Addresses.txt";
+                                                                  Payroll_Filter="";
                                                                   Payroll_Groups=@("024003","024004");}
                                                                 );
                                                   });
+
+    #Payroll Filter Types employee, external, faculty, hs, staff, student
 
     $blnkConfig | ConvertTo-Json -Depth 4 | Out-File .\config.json;
 
@@ -101,22 +105,95 @@ foreach($cfgADGrp in $cnfgSettings.AD_Groups)
     #Check for Payroll Groups to Query
     if($cfgADGrp.Payroll_Groups.Length -gt 0)
     {
+        #HashTable for Payroll Affiliation Types 
+        $htPRAF = @{};
+
+        #Check for Payroll Affilition Types to Load
+        if([string]::IsNullOrEmpty($cfgADGrp.Payroll_Filter) -eq $false)
+        {
+            #If Comma Separated List Found Load PR Hash with It
+            if($cfgADGrp.Payroll_Filter.ToString().Contains(",") -eq $true)
+            {
+                foreach($strPRType in $cfgADGrp.Payroll_Filter.ToString().Split(','))
+                {
+                    $htPRAF.Add($strPRType.ToString().ToLower().Trim(),"1");
+                }
+            }
+            else 
+            {
+                #Just Load the One Value
+                $htPRAF.Add($cfgADGrp.Payroll_Filter.ToString().ToLower().Trim(),"1");
+            }#End of Comma Check on PR Fitler
+            
+        }#End of Payroll Filter Setup Checks
+        
 
         foreach($payrollGrp in $cfgADGrp.Payroll_Groups)
         {
-            #Format AD Filter for Payroll Group Information
+
+            #Format AD Filter for Payroll Group Information (Not Pull Department Accounts)
             [string]$fltPRGrp = "extensionAttribute9 -Like '*appt" + $payrollGrp + "*' -and extensionAttribute11 -ne 'D'";
             
             #Pull Users with Extension Attribute Set for Payroll Group
-            $arrADUsersPR = Get-ADUser -Filter $fltPRGrp -Properties extensionAttribute9,extensionAttribute8,extensionAttribute7 -SearchBase $cnfgSettings.AD_User_Search_Base -Server $cnfgSettings.AD_Parent_Domain;
+            $arrADUsersPR = Get-ADUser -Filter $fltPRGrp -Properties extensionAttribute8 -SearchBase $cnfgSettings.AD_User_Search_Base -Server $cnfgSettings.AD_Parent_Domain;
 
             foreach($ADuserPR in $arrADUsersPR)
             {
+
+                #Var for Add User
+                $bAddToDS = $false;
+
                 #Check DN Before Loading (Prevent Accounts In Not Controlled OUs)
                 if([string]::IsNullOrEmpty($ADuserPR.DistinguishedName) -eq $false -and $htDSDNs.ContainsKey($ADuserPR.DistinguishedName) -eq $false)
                 {
-                    #Add to Data Source DNs HashTable
-                    $htDSDNs.Add($ADuserPR.DistinguishedName,"1");
+
+                    #Check for Payroll Filter
+                    if($htPRAF.Count -gt 0)
+                    {
+                        #Check User Extension Attribute 8 Value
+                        if([string]::IsNullOrEmpty($ADuserPR.extensionAttribute8) -eq $false)
+                        {
+                            #Var for Individual User's Payroll Association Types
+                            $arrUsrPrTypes = @();
+
+                            #Check for Multiple Values on IAM Affiliations
+                            if($ADuserPR.extensionAttribute8.ToString().Contains(",") -eq $true)
+                            {
+                                foreach($prType in $ADuserPR.extensionAttribute8.ToString().ToLower().Trim().Split(','))
+                                {
+                                    $arrUsrPrTypes += $prType;
+                                }
+                            }
+                            else 
+                            {
+                                #Add Singular Affiliation Enty
+                                $arrUsrPrTypes += $ADuserPR.extensionAttribute8.ToString().ToLower().Trim();
+                            }
+
+                            #Check Payroll Association Types for Changing Add Status
+                            foreach($prUsrAsc in $arrUsrPrTypes)
+                            {
+                                if($htPRAF.ContainsKey($prUsrAsc) -eq $true)
+                                {
+                                    $bAddToDS = $true;
+                                }
+                            }#End of Payroll Association Check
+
+                        }#End of Extension Attribute 8 Check
+                        
+                    }
+                    else 
+                    {
+                        $bAddToDS = $true;
+                    }#End of Payroll Filter Checks
+
+                    #Check Status Before Adding to Data Source DN HashTable
+                    if($bAddToDS -eq $true)
+                    {
+                        #Add to Data Source DNs HashTable
+                        $htDSDNs.Add($ADuserPR.DistinguishedName,"1");
+                    }
+
                 }#End of DN Checks
 
             }#End of $arrADUsersPR Foreach
